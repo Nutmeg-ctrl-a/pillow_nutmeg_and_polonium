@@ -1,0 +1,33 @@
+// program.jsl
+// Точка входа в игру
+
+package GameProject;
+
+import System.*;
+import System.Windows.Forms.*;
+
+public class Program
+{
+	// --- Главный метод ---
+	public static void main(String[] args)
+	{
+		try
+		{
+			// Включаем XP-стиль для элементов управления
+			Application.EnableVisualStyles();
+			Application.SetCompatibleTextRenderingDefault(false);
+
+			// Создаем и запускаем форму
+			GameForm mainForm = new GameForm();
+			Application.Run(mainForm);
+		}
+		catch (Exception ex)
+		{
+			// Обработка ошибок (для Windows XP)
+			MessageBox.Show("Произошла ошибка:\n" + ex.get_Message(),
+				"Ошибка игры",
+				MessageBoxButtons.OK,
+				MessageBoxIcon.Error);
+		}
+	}
+}
