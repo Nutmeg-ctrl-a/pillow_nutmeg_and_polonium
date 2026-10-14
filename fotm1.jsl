@@ -1,0 +1,514 @@
+// form.jsl
+// Главная форма игры "Чувак-Безумец" (без мигания)
+
+package GameProject;
+
+import System.*;
+import System.Drawing.*;
+import System.Windows.Forms.*;
+import System.Collections.*;
+
+public class GameForm extends Form
+{
+	// --- Переменные Режима 1 (Подушка) ---
+	private int pillowX = 285;
+	private int pillowY = 350;
+	private int pillowSpeedX = 0;
+	private int pillowSpeedY = 0;
+	private boolean isPillowFlying = false;
+	private int throwCount = 0;
+	private int bounceCount = 0;
+
+	// --- Переменные Режима 2 (Смесь) ---
+	private boolean isMixing = false;
+	private int mixProgress = 0;
+	private int mixAngle = 0;
+	private String[] ingredients = { "Мускатный орех", "Полоний", "Петрушка прошлого времени" };
+	private System.Collections.ArrayList displayedIngredients;
+	private java.util.Random rand = new java.util.Random();
+
+	// --- Общие переменные ---
+	private int currentMode = 1;
+	private Timer gameTimer;
+	private int frameCount = 0;
+	private String statusMessage = "Нажми ПРОБЕЛ для действия";
+
+	// --- Буфер для двойной буферизации (ручная) ---
+	private Bitmap backBuffer;
+	private Graphics backGraphics;
+
+	// --- Конструктор ---
+	public GameForm()
+	{
+		// Настройка формы
+		this.InitializeComponent();
+
+		// ВКЛЮЧАЕМ ДВОЙНУЮ БУФЕРИЗАЦИЮ (главное от мигания!)
+		this.set_DoubleBuffered(true);
+		this.SetStyle(ControlStyles.AllPaintingInWmPaint |
+					  ControlStyles.UserPaint |
+					  ControlStyles.DoubleBuffer |
+					  ControlStyles.ResizeRedraw, true);
+		this.UpdateStyles();
+
+		// Инициализация списка ингредиентов
+		displayedIngredients = new System.Collections.ArrayList();
+		displayedIngredients.Add("Мускатный орех");
+		displayedIngredients.Add("Полоний");
+		displayedIngredients.Add("Петрушка прошлого времени");
+
+		// Запуск таймера
+		gameTimer = new Timer();
+		gameTimer.set_Interval(30); // Чуть меньше FPS для стабильности
+		gameTimer.add_Tick(new EventHandler(this, "OnTimerTick"));
+		gameTimer.Start();
+	}
+
+	// --- Инициализация компонентов ---
+	private void InitializeComponent()
+	{
+		this.set_Text("подушка, мускат и полоний");
+		this.set_Size(new Size(640, 480));
+		this.set_StartPosition(FormStartPosition.CenterScreen);
+		this.set_BackColor(Color.FromArgb(240, 240, 240));
+		this.set_FormBorderStyle(FormBorderStyle.FixedSingle);
+		this.set_MaximizeBox(false);
+
+		// Подключаем обработчики событий
+		this.add_KeyDown(new KeyEventHandler(this, "OnKeyDown"));
+		this.add_Paint(new PaintEventHandler(this, "OnPaint"));
+		this.add_Load(new EventHandler(this, "OnFormLoad"));
+		this.add_Resize(new EventHandler(this, "OnResize"));
+
+		this.set_KeyPreview(true);
+	}
+
+	// --- Создание буфера при изменении размера ---
+	private void OnResize(Object sender, EventArgs e)
+	{
+		if (this.get_Width() > 0 && this.get_Height() > 0)
+		{
+			backBuffer = new Bitmap(this.get_Width(), this.get_Height());
+			backGraphics = Graphics.FromImage(backBuffer);
+		}
+	}
+
+	// --- Событие загрузки формы ---
+	private void OnFormLoad(Object sender, EventArgs e)
+	{
+		this.statusMessage = "Игра загружена! Нажми 1 или 2 для выбора режима.";
+		// Создаем буфер
+		backBuffer = new Bitmap(this.get_Width(), this.get_Height());
+		backGraphics = Graphics.FromImage(backBuffer);
+		this.Invalidate();
+	}
+
+	// --- Таймер (анимация и физика) ---
+	private void OnTimerTick(Object sender, EventArgs e)
+	{
+		frameCount++;
+		boolean needRepaint = false;
+
+		if (currentMode == 1)
+		{
+			if (isPillowFlying)
+			{
+				pillowX += pillowSpeedX;
+				pillowY += pillowSpeedY;
+				pillowSpeedY += 1;
+
+				if (pillowY <= 40)
+				{
+					pillowY = 40;
+					pillowSpeedY = -java.lang.Math.abs(pillowSpeedY);
+					pillowSpeedY = (int)(pillowSpeedY * 0.7);
+					bounceCount++;
+					throwCount++;
+					pillowSpeedX = rand.nextInt(7) - 3;
+
+					if (java.lang.Math.abs(pillowSpeedY) < 2)
+						pillowSpeedY = -5;
+				}
+
+				if (pillowY >= 380)
+				{
+					pillowY = 380;
+					pillowSpeedY = -pillowSpeedY;
+					pillowSpeedY = (int)(pillowSpeedY * 0.5);
+					pillowSpeedX = (int)(pillowSpeedX * 0.8);
+
+					if (java.lang.Math.abs(pillowSpeedY) < 3)
+					{
+						pillowSpeedY = 0;
+						pillowSpeedX = 0;
+						isPillowFlying = false;
+						this.statusMessage = "Подушка упала! Бросков: " + throwCount;
+					}
+				}
+
+				if (pillowX <= 20 || pillowX >= 590)
+				{
+					pillowSpeedX = -pillowSpeedX;
+					if (pillowX < 20) pillowX = 20;
+					if (pillowX > 590) pillowX = 590;
+				}
+
+				needRepaint = true;
+			}
+		}
+		else if (currentMode == 2)
+		{
+			if (isMixing)
+			{
+				mixProgress += 3;
+				mixAngle += 15;
+
+				if (mixProgress >= 100)
+				{
+					mixProgress = 0;
+					isMixing = false;
+					mixAngle = 0;
+					this.ShuffleIngredients();
+					this.statusMessage = "Ингредиенты перемешаны!";
+					needRepaint = true;
+				}
+				else
+				{
+					if (mixProgress % 20 == 0)
+						this.statusMessage = "Мешаем... " + (mixProgress) + "%";
+					needRepaint = true;
+				}
+			}
+		}
+
+		if (needRepaint)
+		{
+			this.Invalidate();
+		}
+	}
+
+	// --- Простое перемешивание списка ---
+	private void ShuffleIngredients()
+	{
+		int count = displayedIngredients.get_Count();
+		for (int i = 0; i < count * 2; i++)
+		{
+			int index1 = rand.nextInt(count);
+			int index2 = rand.nextInt(count);
+			Object temp = displayedIngredients.get_Item(index1);
+			displayedIngredients.set_Item(index1, displayedIngredients.get_Item(index2));
+			displayedIngredients.set_Item(index2, temp);
+		}
+	}
+
+	// --- Обработка клавиатуры ---
+	private void OnKeyDown(Object sender, KeyEventArgs e)
+	{
+		Keys key = e.get_KeyCode();
+
+		if (key == Keys.D1)
+		{
+			currentMode = 1;
+			this.set_Text("Режим: Подушка | Бросков: " + throwCount);
+			this.statusMessage = "Режим подушки. Нажми ПРОБЕЛ чтобы кинуть!";
+			this.Invalidate();
+		}
+		else if (key == Keys.D2)
+		{
+			currentMode = 2;
+			this.set_Text("Режим: Кухня | Ингредиенты: " + displayedIngredients.get_Count());
+			this.statusMessage = "Режим смеси. Нажми ПРОБЕЛ чтобы мешать!";
+			displayedIngredients.Clear();
+			displayedIngredients.Add("Мускатный орех");
+			displayedIngredients.Add("Полоний");
+			displayedIngredients.Add("Петрушка прошлого времени");
+			this.Invalidate();
+		}
+
+		if (key == Keys.Space)
+		{
+			if (currentMode == 1)
+			{
+				if (!isPillowFlying)
+				{
+					pillowX = 285;
+					pillowY = 350;
+					pillowSpeedX = rand.nextInt(5) - 2;
+					pillowSpeedY = -20 - rand.nextInt(5);
+					isPillowFlying = true;
+					bounceCount = 0;
+					this.statusMessage = "Подушка летит!";
+					this.Invalidate();
+				}
+			}
+			else if (currentMode == 2)
+			{
+				if (!isMixing)
+				{
+					isMixing = true;
+					mixProgress = 0;
+					this.statusMessage = "Начинаем мешать...";
+					this.Invalidate();
+				}
+			}
+		}
+
+		if (key == Keys.R && currentMode == 1)
+		{
+			throwCount = 0;
+			this.statusMessage = "Статистика сброшена!";
+			this.Invalidate();
+		}
+
+		if (key == Keys.Escape)
+		{
+			Application.Exit();
+		}
+	}
+
+	// --- Отрисовка (с двойной буферизацией) ---
+	private void OnPaint(Object sender, PaintEventArgs e)
+	{
+		// Рисуем все в буфер
+		this.DrawGame(backGraphics);
+		// Копируем буфер на экран (одна операция, без мигания)
+		e.get_Graphics().DrawImage(backBuffer, 0, 0);
+	}
+
+	// --- Основная отрисовка игры ---
+	private void DrawGame(Graphics g)
+	{
+		g.set_SmoothingMode(System.Drawing.Drawing2D.SmoothingMode.AntiAlias);
+
+		this.DrawBackground(g);
+		this.DrawCharacter(g);
+
+		if (currentMode == 1)
+			this.DrawPillowMode(g);
+		else if (currentMode == 2)
+			this.DrawMixMode(g);
+
+		this.DrawUI(g);
+	}
+
+	// --- Фон ---
+	private void DrawBackground(Graphics g)
+	{
+		System.Drawing.Drawing2D.LinearGradientBrush gradient =
+			new System.Drawing.Drawing2D.LinearGradientBrush(
+				new Rectangle(0, 0, this.get_Width(), this.get_Height()),
+				Color.FromArgb(173, 216, 230),
+				Color.FromArgb(255, 255, 224),
+				45.0f
+			);
+		g.FillRectangle(gradient, 0, 0, this.get_Width(), this.get_Height());
+
+		g.FillRectangle(new SolidBrush(Color.FromArgb(180, 180, 180)), 0, 390, 640, 60);
+		g.DrawLine(new Pen(Color.FromArgb(128, 128, 128)), 0, 390, 640, 390);
+
+		g.DrawLine(new Pen(Color.FromArgb(200, 200, 200), 3), 0, 40, 640, 40);
+		for (int i = 0; i < 640; i += 40)
+		{
+			g.DrawLine(new Pen(Color.FromArgb(220, 220, 220)), i, 40, i + 20, 30);
+		}
+	}
+
+	// --- Персонаж (Чувак) с нормальной шапкой ---
+	private void DrawCharacter(Graphics g)
+	{
+		// Тело
+		g.FillRectangle(new SolidBrush(Color.FromArgb(70, 130, 200)), 270, 330, 60, 60);
+		g.DrawRectangle(new Pen(Color.FromArgb(0, 0, 0), 2), 270, 330, 60, 60);
+
+		// Голова
+		g.FillEllipse(new SolidBrush(Color.FromArgb(255, 220, 180)), 275, 300, 50, 45);
+		g.DrawEllipse(new Pen(Color.FromArgb(0, 0, 0), 2), 275, 300, 50, 45);
+
+		// Глаза
+		g.FillEllipse(new SolidBrush(Color.FromArgb(255, 255, 255)), 285, 312, 12, 12);
+		g.FillEllipse(new SolidBrush(Color.FromArgb(255, 255, 255)), 303, 312, 12, 12);
+		g.FillEllipse(new SolidBrush(Color.FromArgb(0, 0, 0)), 289, 316, 6, 6);
+		g.FillEllipse(new SolidBrush(Color.FromArgb(0, 0, 0)), 307, 316, 6, 6);
+
+		// Рот (улыбка)
+		g.DrawArc(new Pen(Color.FromArgb(0, 0, 0), 2), 290, 322, 20, 10, 0, 180);
+
+		// Руки
+		g.FillRectangle(new SolidBrush(Color.FromArgb(70, 130, 200)), 255, 340, 15, 30);
+		g.FillRectangle(new SolidBrush(Color.FromArgb(70, 130, 200)), 330, 340, 15, 30);
+		g.DrawRectangle(new Pen(Color.FromArgb(0, 0, 0), 1), 255, 340, 15, 30);
+		g.DrawRectangle(new Pen(Color.FromArgb(0, 0, 0), 1), 330, 340, 15, 30);
+
+		// Кисти рук
+		g.FillEllipse(new SolidBrush(Color.FromArgb(255, 220, 180)), 253, 365, 15, 15);
+		g.FillEllipse(new SolidBrush(Color.FromArgb(255, 220, 180)), 332, 365, 15, 15);
+
+		// Ноги
+		g.FillRectangle(new SolidBrush(Color.FromArgb(50, 50, 150)), 275, 390, 20, 30);
+		g.FillRectangle(new SolidBrush(Color.FromArgb(50, 50, 150)), 305, 390, 20, 30);
+		g.DrawRectangle(new Pen(Color.FromArgb(0, 0, 0), 1), 275, 390, 20, 30);
+		g.DrawRectangle(new Pen(Color.FromArgb(0, 0, 0), 1), 305, 390, 20, 30);
+
+	}
+
+	// --- Режим подушки ---
+	private void DrawPillowMode(Graphics g)
+	{
+		SolidBrush pillowBrush = new SolidBrush(Color.FromArgb(255, 255, 255));
+		g.FillRectangle(pillowBrush, pillowX, pillowY, 40, 25);
+		g.DrawRectangle(new Pen(Color.FromArgb(150, 150, 150), 2), pillowX, pillowY, 40, 25);
+
+		g.DrawLine(new Pen(Color.FromArgb(200, 200, 200)), pillowX + 10, pillowY + 5, pillowX + 30, pillowY + 20);
+		g.DrawLine(new Pen(Color.FromArgb(200, 200, 200)), pillowX + 30, pillowY + 5, pillowX + 10, pillowY + 20);
+		g.FillEllipse(new SolidBrush(Color.FromArgb(180, 180, 180)), pillowX + 15, pillowY + 8, 5, 5);
+		g.FillEllipse(new SolidBrush(Color.FromArgb(180, 180, 180)), pillowX + 25, pillowY + 8, 5, 5);
+
+		if (isPillowFlying)
+		{
+			for (int i = 1; i <= 5; i++)
+			{
+				int alpha = 255 - i * 40;
+				g.FillEllipse(
+					new SolidBrush(Color.FromArgb(alpha, 200, 200, 255)),
+					pillowX - i * 5 + 15,
+					pillowY + i * 8,
+					10 - i,
+					10 - i
+				);
+			}
+
+			g.DrawString("Летит!",
+				new Font("Arial", 12, FontStyle.Bold),
+				new SolidBrush(Color.FromArgb(0, 0, 139)),
+				pillowX - 20, pillowY - 30);
+		}
+
+		g.DrawString("Бросков: " + throwCount + " | Отскоков: " + bounceCount,
+			new Font("Arial", 12, FontStyle.Bold),
+			new SolidBrush(Color.FromArgb(0, 0, 139)),
+			20, 80);
+
+		g.DrawString("R - сброс статистики",
+			new Font("Arial", 9, FontStyle.Regular),
+			new SolidBrush(Color.FromArgb(169, 169, 169)),
+			20, 110);
+	}
+
+	// --- Режим смеси ---
+	private void DrawMixMode(Graphics g)
+	{
+		g.FillEllipse(new SolidBrush(Color.FromArgb(80, 80, 80)), 150, 290, 340, 40);
+		g.FillRectangle(new SolidBrush(Color.FromArgb(60, 60, 60)), 160, 220, 320, 80);
+		g.FillEllipse(new SolidBrush(Color.FromArgb(80, 80, 80)), 160, 220, 320, 40);
+
+		g.FillRectangle(new SolidBrush(Color.FromArgb(50, 50, 50)), 140, 240, 20, 30);
+		g.FillRectangle(new SolidBrush(Color.FromArgb(50, 50, 50)), 480, 240, 20, 30);
+
+		int xBase = 200;
+		int yBase = 245;
+		int itemWidth = 120;
+		int itemHeight = 30;
+
+		for (int i = 0; i < displayedIngredients.get_Count(); i++)
+		{
+			String item = (String)displayedIngredients.get_Item(i);
+			int xPos = xBase + (i * (itemWidth + 10));
+
+			double angleRad = mixAngle * 0.1 + i;
+			int yOffset = 0;
+			if (isMixing)
+				yOffset = (int)(java.lang.Math.sin(angleRad) * 10);
+			int yPos = yBase + (i % 2) * 25 + yOffset;
+
+			SolidBrush colorBrush;
+			if (item.startsWith("Мускатный"))
+				colorBrush = new SolidBrush(Color.FromArgb(180, 120, 60));
+			else if (item.startsWith("Полоний"))
+				colorBrush = new SolidBrush(Color.FromArgb(80, 180, 80));
+			else
+				colorBrush = new SolidBrush(Color.FromArgb(60, 150, 60));
+
+			g.FillEllipse(colorBrush, xPos, yPos, itemWidth, itemHeight);
+			g.DrawEllipse(new Pen(Color.FromArgb(0, 0, 0), 1), xPos, yPos, itemWidth, itemHeight);
+
+			Font itemFont = new Font("Arial", 9, FontStyle.Bold);
+			String displayText = item;
+			if (item.startsWith("Петрушка"))
+				displayText = "Петрушка (прошл.)";
+
+			g.DrawString(displayText, itemFont, new SolidBrush(Color.FromArgb(255, 255, 255)),
+				xPos + 5, yPos + 8);
+		}
+
+		if (isMixing)
+		{
+			double angleRad1 = mixAngle * 0.1;
+			double angleRad2 = mixAngle * 0.15;
+			int spoonX = 320 + (int)(java.lang.Math.sin(angleRad1) * 80);
+			int spoonY = 200 + (int)(java.lang.Math.cos(angleRad2) * 40);
+
+			g.DrawLine(new Pen(Color.FromArgb(180, 150, 100), 6), 350, 180, spoonX, spoonY);
+			g.DrawLine(new Pen(Color.FromArgb(140, 110, 60), 4), 350, 180, spoonX, spoonY);
+
+			g.FillEllipse(new SolidBrush(Color.FromArgb(200, 200, 200)), spoonX - 12, spoonY - 8, 24, 16);
+			g.DrawEllipse(new Pen(Color.FromArgb(150, 150, 150)), spoonX - 12, spoonY - 8, 24, 16);
+
+			g.DrawString("*мешает*",
+				new Font("Arial", 14, FontStyle.Bold | FontStyle.Italic),
+				new SolidBrush(Color.FromArgb(200, 100, 0)),
+				400, 180);
+
+			g.DrawString("Перемешивание: " + mixProgress + "%",
+				new Font("Arial", 12, FontStyle.Bold),
+				new SolidBrush(Color.FromArgb(0, 0, 139)),
+				40, 350);
+
+			g.FillRectangle(new SolidBrush(Color.FromArgb(220, 220, 220)), 40, 370, 200, 20);
+			g.FillRectangle(new SolidBrush(Color.FromArgb(50, 200, 50)), 40, 370, (int)(200 * mixProgress / 100.0), 20);
+			g.DrawRectangle(new Pen(Color.FromArgb(0, 0, 0)), 40, 370, 200, 20);
+		}
+		else
+		{
+			g.DrawString("Нажми ПРОБЕЛ чтобы начать мешать",
+				new Font("Arial", 14, FontStyle.Bold),
+				new SolidBrush(Color.FromArgb(139, 0, 0)),
+				40, 350);
+		}
+
+		g.DrawString("Ингредиенты:",
+			new Font("Arial", 10, FontStyle.Bold),
+			new SolidBrush(Color.FromArgb(0, 0, 139)),
+			40, 420);
+
+		for (int i = 0; i < displayedIngredients.get_Count(); i++)
+		{
+			g.DrawString("• " + displayedIngredients.get_Item(i),
+				new Font("Arial", 9, FontStyle.Regular),
+				new SolidBrush(Color.FromArgb(0, 0, 0)),
+				40 + (i * 140), 440);
+		}
+	}
+
+	// --- Интерфейс ---
+	private void DrawUI(Graphics g)
+	{
+		g.FillRectangle(new SolidBrush(Color.FromArgb(200, 200, 200)), 0, this.get_Height() - 30, this.get_Width(), 30);
+		g.DrawLine(new Pen(Color.FromArgb(128, 128, 128)), 0, this.get_Height() - 30, this.get_Width(), this.get_Height() - 30);
+
+		Font statusFont = new Font("Arial", 10, FontStyle.Regular);
+		g.DrawString("Статус: " + this.statusMessage, statusFont, new SolidBrush(Color.FromArgb(0, 0, 0)), 10, this.get_Height() - 25);
+
+		String controls = "1 - Подушка | 2 - Смесь | Пробел - Действие | ESC - Выход";
+		g.DrawString(controls, statusFont, new SolidBrush(Color.FromArgb(169, 169, 169)), this.get_Width() - 360, this.get_Height() - 25);
+
+		g.DrawString("Режим: " + (currentMode == 1 ? "Подушка" : "Смесь"),
+			new Font("Arial", 10, FontStyle.Bold),
+			new SolidBrush(Color.FromArgb(0, 0, 139)),
+			10, 10);
+
+		g.DrawString("FPS: " + (1000 / 30),
+			new Font("Arial", 8, FontStyle.Regular),
+			new SolidBrush(Color.FromArgb(169, 169, 169)),
+			this.get_Width() - 60, 10);
+	}
+}
